@@ -175,33 +175,12 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				}
 
 				if (choice.delta) {
-					if (
-						choice.delta.content !== null &&
-						choice.delta.content !== undefined &&
-						choice.delta.content.length > 0
-					) {
-						if (!currentBlock || currentBlock.type !== "text") {
-							finishCurrentBlock(currentBlock);
-							currentBlock = { type: "text", text: "" };
-							output.content.push(currentBlock);
-							stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
-						}
-
-						if (currentBlock.type === "text") {
-							currentBlock.text += choice.delta.content;
-							stream.push({
-								type: "text_delta",
-								contentIndex: blockIndex(),
-								delta: choice.delta.content,
-								partial: output,
-							});
-						}
-					}
-
 					// Some endpoints return reasoning in reasoning_content (llama.cpp),
 					// or reasoning (other openai compatible endpoints)
 					// Use the first non-empty reasoning field to avoid duplication
 					// (e.g., chutes.ai returns both reasoning_content and reasoning with same content)
+					// NOTE: Process reasoning_content before content to avoid block interleaving issues
+					// when both appear in the same chunk. Reasoning typically precedes content in LLM output.
 					const reasoningFields = ["reasoning_content", "reasoning", "reasoning_text"];
 					let foundReasoningField: string | null = null;
 					for (const field of reasoningFields) {
@@ -236,6 +215,29 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 								type: "thinking_delta",
 								contentIndex: blockIndex(),
 								delta,
+								partial: output,
+							});
+						}
+					}
+
+					if (
+						choice.delta.content !== null &&
+						choice.delta.content !== undefined &&
+						choice.delta.content.length > 0
+					) {
+						if (!currentBlock || currentBlock.type !== "text") {
+							finishCurrentBlock(currentBlock);
+							currentBlock = { type: "text", text: "" };
+							output.content.push(currentBlock);
+							stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+						}
+
+						if (currentBlock.type === "text") {
+							currentBlock.text += choice.delta.content;
+							stream.push({
+								type: "text_delta",
+								contentIndex: blockIndex(),
+								delta: choice.delta.content,
 								partial: output,
 							});
 						}
